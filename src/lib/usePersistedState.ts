@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 // Period-style controls (the dashboard window, report days, decay buckets) used to be bare
 // component state: a refresh reset them, no link could carry them, and every screen silently
@@ -24,13 +24,17 @@ export function usePersistedState<T extends string | number>(
   ok: (v: unknown) => boolean,
   urlParam?: string,
 ): [T, (v: T) => void] {
-  const [value, setValue] = useState<T>(() => {
-    if (typeof window === "undefined") return fallback;
+  const [value, setValue] = useState<T>(fallback);
+
+  useEffect(() => {
     if (urlParam) {
       const raw = new URLSearchParams(window.location.search).get(urlParam);
       if (raw !== null) {
         const parsed = (typeof fallback === "number" ? Number(raw) : raw) as unknown;
-        if (ok(parsed)) return parsed as T;
+        if (ok(parsed)) {
+          if (parsed !== value) setValue(parsed as T);
+          return;
+        }
       }
     }
     if (key) {
@@ -38,12 +42,11 @@ export function usePersistedState<T extends string | number>(
         const stored = window.localStorage.getItem(key);
         if (stored !== null) {
           const parsed = JSON.parse(stored) as unknown;
-          if (ok(parsed)) return parsed as T;
+          if (ok(parsed) && parsed !== value) setValue(parsed as T);
         }
       } catch { /* a corrupted preference is no preference */ }
     }
-    return fallback;
-  });
+  }, [fallback, key, ok, urlParam, value]);
 
   const set = (v: T) => {
     setValue(v);
