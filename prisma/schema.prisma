@@ -114,6 +114,8 @@ model User {
   geoAudits           GeoAudit[]
   memberships         Membership[] @relation("MembershipMember")
   workspaceMembers    Membership[] @relation("MembershipOwner")
+  roleSiteAccess      RoleSiteAccess[] @relation("RoleSiteAccessOwner")
+  roleToolAccess      RoleToolAccess[] @relation("RoleToolAccessOwner")
 }
 
 // One person's access to one workspace. Rows exist only for members — the owner's access comes
@@ -143,6 +145,31 @@ model Membership {
   @@index([ownerId, status])
 }
 
+model RoleSiteAccess {
+  id       String @id @default(cuid())
+  ownerId  String
+  roleName String
+  siteId   String
+
+  owner User @relation("RoleSiteAccessOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  site  Site @relation(fields: [siteId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, roleName, siteId])
+  @@index([ownerId, roleName])
+}
+
+model RoleToolAccess {
+  id       String @id @default(cuid())
+  ownerId  String
+  roleName String
+  toolHref String
+
+  owner User @relation("RoleToolAccessOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, roleName, toolHref])
+  @@index([ownerId, roleName])
+}
+
 model VerificationToken {
   identifier String
   token      String   @unique
@@ -159,6 +186,7 @@ model Site {
   tags             String?  // JSON array string or comma separated
   brandedKeywords  String?  // JSON array e.g. ["ikea","ikea chair"]
   createdAt        DateTime @default(now())
+  roleSiteAccess   RoleSiteAccess[]
 
   // Which search market this site targets, as a 2-letter gl code.
   //

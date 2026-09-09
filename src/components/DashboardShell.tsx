@@ -10,6 +10,7 @@ import { useTheme } from "@/lib/ThemeContext";
 import { useLayout } from "@/lib/LayoutContext";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { aparserConfiguredLocally, isAparserConfigured, resetAparserConfiguredCache } from "@/lib/seo/aparserConfigured";
+import { TOP_NAV_ACCESS } from "@/lib/seo/toolAccess";
 import UpdateBanner from "@/components/UpdateBanner";
 import SchemaBanner from "@/components/SchemaBanner";
 
@@ -502,6 +503,7 @@ function useNavItems(): NavItem[] {
   const { t } = useLanguage();
 
   const [hasAparser, setHasAparser] = useState(false);
+  const [allowedTopNav, setAllowedTopNav] = useState<Set<string> | null>(null);
   useEffect(() => {
     let alive = true;
     const read = () => {
@@ -528,7 +530,14 @@ function useNavItems(): NavItem[] {
     };
   }, []);
 
-  return [
+  useEffect(() => {
+    fetch("/api/team/roles/current/tools", { cache: "no-store" })
+      .then(response => response.json())
+      .then(data => setAllowedTopNav(data.all ? null : new Set<string>(data.toolHrefs || [])))
+      .catch(() => setAllowedTopNav(null));
+  }, []);
+
+  const items: NavItem[] = [
     { href: "/", label: t("menuDashboard"), key: "sites", exact: true, icon: <LayoutDashboard size={14} /> },
     { href: "/striking", label: t("menuStriking"), key: "striking", icon: <TrendingUp size={14} /> },
     { href: "/cannibalization", label: t("menuCannibalization"), key: "cannibalization", icon: <Anchor size={14} /> },
@@ -553,6 +562,9 @@ function useNavItems(): NavItem[] {
     // somebody else's site — hence last, and hidden until that machine exists.
     ...(hasAparser ? [{ href: "/aparser", label: t("aparserNavTitle"), key: "aparser", icon: <Server size={14} /> }] : []),
   ];
+  return allowedTopNav
+    ? items.filter(item => item.href === "/" || !TOP_NAV_ACCESS.some(nav => nav.href === item.href) || allowedTopNav.has(item.href))
+    : items;
 }
 
 function isNavActive(item: NavItem, pathname: string | null): boolean {

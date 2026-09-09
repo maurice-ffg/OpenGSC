@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { Sparkles, LayoutGrid } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
 import { SEO_TOOLS } from "@/lib/seo/toolsNav";
@@ -17,6 +18,23 @@ export default function SeoToolsLayout({ children }: { children: React.ReactNode
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useLanguage();
+  const [allowedTools, setAllowedTools] = useState<Set<string> | null>(null);
+
+  useEffect(() => {
+    fetch("/api/team/roles/current/tools", { cache: "no-store" })
+      .then(response => response.json())
+      .then(data => setAllowedTools(data.all ? null : new Set<string>(data.toolHrefs || [])))
+      .catch(() => setAllowedTools(null));
+  }, []);
+
+  const visibleTabs = useMemo(
+    () => allowedTools ? TABS.filter(tab => tab.href === "/seo-tools" || allowedTools.has(tab.href)) : TABS,
+    [allowedTools],
+  );
+
+  useEffect(() => {
+    if (allowedTools && pathname !== "/seo-tools" && !allowedTools.has(pathname)) router.replace("/seo-tools");
+  }, [allowedTools, pathname, router]);
 
   return (
     <div style={{ padding: "28px var(--page-padding) 60px", maxWidth: "var(--page-max-width)", margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
@@ -50,7 +68,7 @@ export default function SeoToolsLayout({ children }: { children: React.ReactNode
         display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "20px", marginBottom: "24px",
         borderBottom: "1px solid var(--color-border)", paddingBottom: "0",
       }}>
-        {TABS.map(({ href, key, icon: Icon }) => {
+        {visibleTabs.map(({ href, key, icon: Icon }) => {
           const active = pathname === href;
           return (
             <button

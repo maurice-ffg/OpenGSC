@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { SlidersHorizontal } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { useEffect, useState } from "react";
 import { SEO_TOOLS } from "@/lib/seo/toolsNav";
 
 // Same order as the tab bar, because it is the same array. Settings is appended rather than
@@ -17,12 +18,20 @@ const TILES = [
 
 export default function SeoToolsIndex() {
   const { t } = useLanguage();
+  const [allowedTools, setAllowedTools] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    fetch("/api/team/roles/current/tools", { cache: "no-store" })
+      .then(response => response.json())
+      .then(data => setAllowedTools(data.all ? null : new Set<string>(data.toolHrefs || [])))
+      .catch(() => setAllowedTools(null));
+  }, []);
+  const visibleTiles = allowedTools ? TILES.filter(tile => tile.href === "/seo-tools/settings" || allowedTools.has(tile.href)) : TILES;
   return (
     // gridAutoRows:1fr equalizes EVERY row, not just the items within one row. Without it a short
     // final row (two tiles) sizes itself to its own content and ends up visibly shorter than the
     // full rows above it.
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "14px", gridAutoRows: "1fr" }}>
-      {TILES.map(({ href, key, desc, icon: Icon, color }) => (
+      {visibleTiles.map(({ href, key, desc, icon: Icon, color }) => (
         // The <a> is the grid item and stretches to the row height; making it a flex container is
         // what lets the panel inside actually fill it. `height:100%` on the panel alone did nothing,
         // because the link itself had no resolved height to be a percentage of.

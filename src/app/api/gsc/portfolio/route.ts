@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authOptions } from '@/lib/auth';
-import { workspaceUserId } from "@/lib/team/workspace";
+import { getWorkspace, workspaceUserId } from "@/lib/team/workspace";
+import { isCustomRole } from "@/lib/team/roles";
 import { prisma } from '@/lib/prisma';
 
 function periodToDays(period: string): number {
@@ -58,7 +59,17 @@ export async function GET(req: Request) {
     }
   }
 
-  const sites = await prisma.site.findMany({ where: { userId }, orderBy: { createdAt: 'asc' } });
+  const workspace = await getWorkspace();
+  const allowedSiteIds = workspace && isCustomRole(workspace.role)
+    ? (await prisma.roleSiteAccess.findMany({
+        where: { ownerId: userId, roleName: workspace.role },
+        select: { siteId: true },
+      })).map(access => access.siteId)
+    : null;
+  const sites = await prisma.site.findMany({
+    where: { userId, ...(allowedSiteIds ? { id: { in: allowedSiteIds } } : {}) },
+    orderBy: { createdAt: 'asc' },
+  });
 
   // Zeroed payload for archived properties. They still ship to the client — the dashboard
   // lists them in its Archive group — but the two metric reads and the sparkline maths are

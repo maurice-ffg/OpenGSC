@@ -18,7 +18,7 @@
 export const TEAM_ROLES = ["viewer", "editor", "admin"] as const;
 export type TeamRole = typeof TEAM_ROLES[number];
 /** The owner is not a membership row — it is the account that owns the data. */
-export type WorkspaceRole = TeamRole | "owner";
+export type WorkspaceRole = TeamRole | "owner" | (string & {});
 
 export const MEMBER_STATUSES = ["active", "invited", "suspended"] as const;
 export type MemberStatus = typeof MEMBER_STATUSES[number];
@@ -56,13 +56,24 @@ export function isTeamRole(value: unknown): value is TeamRole {
   return TEAM_ROLES.includes(String(value) as TeamRole);
 }
 
+export function isCustomRole(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  const role = value.trim();
+  const reserved = [...TEAM_ROLES, "owner"];
+  return role.length > 0 && role.length <= 80 && !reserved.some(name => name.toLowerCase() === role.toLowerCase());
+}
+
+export function isAssignableRole(value: unknown): value is TeamRole | string {
+  return isTeamRole(value) || isCustomRole(value);
+}
+
 export function can(workspace: Pick<Workspace, "role"> | null | undefined, capability: Capability): boolean {
   if (!workspace) return false;
-  return (MATRIX[workspace.role] ?? []).includes(capability);
+  return (MATRIX[workspace.role as keyof typeof MATRIX] ?? MATRIX.viewer).includes(capability);
 }
 
 export function capabilitiesOf(role: WorkspaceRole): readonly Capability[] {
-  return MATRIX[role] ?? [];
+  return MATRIX[role as keyof typeof MATRIX] ?? MATRIX.viewer;
 }
 
 /**

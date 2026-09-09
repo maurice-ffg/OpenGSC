@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { authOptions } from '@/lib/auth';
-import { workspaceUserId } from "@/lib/team/workspace";
+import { getWorkspace, workspaceUserId } from "@/lib/team/workspace";
+import { isCustomRole } from "@/lib/team/roles";
 import { prisma } from '@/lib/prisma';
 import { google } from 'googleapis';
 
@@ -47,6 +48,16 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const workspace = await getWorkspace();
+  const allowedSiteIds = workspace && isCustomRole(workspace.role)
+    ? new Set((await prisma.roleSiteAccess.findMany({
+        where: { ownerId: userId, roleName: workspace.role },
+        select: { siteId: true },
+      })).map(access => access.siteId))
+    : null;
+  const visible = <T extends { id: string }>(sites: T[]) =>
+    allowedSiteIds ? sites.filter(site => allowedSiteIds.has(site.id)) : sites;
+
   // ── Fetch ALL linked Google accounts for the admin user ──────────────────
   const googleAccounts = await prisma.account.findMany({
     where: {
@@ -64,7 +75,7 @@ export async function GET() {
   if (googleAccounts.length === 0) {
     // Return DB sites even if no accounts connected yet
     const dbSites = await prisma.site.findMany({ where: { userId } });
-    return NextResponse.json({ sites: dbSites, connected_accounts: 0 });
+    return NextResponse.json({ sites: visible(dbSites), connected_accounts: 0 });
   }
 
   // ── Process all accounts in parallel ─────────────────────────────────────
@@ -159,7 +170,7 @@ export async function GET() {
   });
 
   return NextResponse.json({
-    sites: userSites,
+    sites: visible(userSites),
     connected_accounts: googleAccounts.length,
     archived_now: archived,
     restored_now: restored,

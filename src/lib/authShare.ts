@@ -1,6 +1,8 @@
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { isCustomRole } from '@/lib/team/roles';
+import { getWorkspace } from '@/lib/team/workspace';
 
 export async function verifyAuthOrShare(
   req: Request,
@@ -27,14 +29,23 @@ export async function verifyAuthOrShare(
   }
 
   if (loggedInUserId) {
+    const workspace = await getWorkspace();
+    const userId = workspace?.ownerId ?? loggedInUserId;
     const site = await prisma.site.findFirst({
       where: {
-        userId: loggedInUserId,
+        userId,
         ...(isDomain ? { url: siteIdOrDomain } : { id: siteIdOrDomain }),
       },
     });
     if (site) {
-      return { userId: loggedInUserId, site };
+      if (workspace && isCustomRole(workspace.role)) {
+        const access = await prisma.roleSiteAccess.findFirst({
+          where: { ownerId: workspace.ownerId, roleName: workspace.role, siteId: site.id },
+          select: { id: true },
+        });
+        if (!access) return null;
+      }
+      return { userId, site };
     }
   }
 

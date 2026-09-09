@@ -5,10 +5,11 @@ import {
   AlertTriangle, Check, Copy, Crown, KeyRound, Loader2, Plus, RefreshCw, Shield, Trash2, UserX,
 } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/LanguageProvider";
+import { readCustomRoles } from "@/lib/team/customRoles";
 
 type Role = "viewer" | "editor" | "admin";
 type Member = {
-  id: string; email: string; name: string | null; role: Role; status: string;
+  id: string; email: string; name: string | null; role: string; status: string;
   invitePending: boolean; inviteExpiresAt: string | null; acceptedAt: string | null;
   lastSeenAt: string | null; canSignIn: boolean;
 };
@@ -36,6 +37,9 @@ export default function TeamMembersPanel() {
   const [error, setError] = useState("");
   const [form, setForm] = useState({ email: "", name: "", role: "viewer" as Role, mode: "password" as "password" | "invite" });
   const [secret, setSecret] = useState<{ email: string; password?: string | null; inviteToken?: string | null } | null>(null);
+  const [customRoles, setCustomRoles] = useState<string[]>([]);
+
+  useEffect(() => { setCustomRoles(readCustomRoles()); }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -86,7 +90,7 @@ export default function TeamMembersPanel() {
 
   const canManage = data.me.capabilities.includes("manageMembers");
   const isOwner = data.me.role === "owner";
-  const assignable: Role[] = isOwner ? ROLE_ORDER : ROLE_ORDER.filter(role => role !== "admin");
+  const assignable: string[] = [...(isOwner ? ROLE_ORDER : ROLE_ORDER.filter(role => role !== "admin")), ...customRoles];
 
   return <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
     <div style={card}>
@@ -122,7 +126,7 @@ export default function TeamMembersPanel() {
         </label>
         <label style={label}>{t("teamRole" as any)}
           <select className="tool-input" value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value as Role }))}>
-            {assignable.map(role => <option key={role} value={role}>{t(`teamRole${role[0].toUpperCase()}${role.slice(1)}` as any)}</option>)}
+            {assignable.map(role => <option key={role} value={role}>{customRoles.includes(role) ? role : t(`teamRole${role[0].toUpperCase()}${role.slice(1)}` as any)}</option>)}
           </select>
         </label>
         <label style={label}>{t("teamHowToAdd" as any)}
@@ -159,7 +163,7 @@ export default function TeamMembersPanel() {
         title={member.name || member.email}
         subtitle={member.email}
         badge={<span style={badge(member.role === "admin" ? "#bf5af2" : member.role === "editor" ? "#34c759" : "#8e8e93")}>
-          {t(`teamRole${member.role[0].toUpperCase()}${member.role.slice(1)}` as any)}
+          {customRoles.includes(member.role) ? member.role : t(`teamRole${member.role[0].toUpperCase()}${member.role.slice(1)}` as any)}
         </span>}
         note={member.invitePending ? t("teamInvitePending" as any) : member.status === "suspended" ? t("teamSuspended" as any)
           : member.lastSeenAt ? `${t("teamLastSeen" as any)}: ${new Date(member.lastSeenAt).toLocaleString()}` : t("teamNeverSignedIn" as any)}
@@ -168,7 +172,7 @@ export default function TeamMembersPanel() {
             className="tool-input" style={{ width: "auto" }} value={member.role} disabled={!!busy}
             onChange={e => patchMember(member.id, { role: e.target.value }, `role-${member.id}`)}
           >
-            {assignable.map(role => <option key={role} value={role}>{t(`teamRole${role[0].toUpperCase()}${role.slice(1)}` as any)}</option>)}
+            {assignable.map(role => <option key={role} value={role}>{customRoles.includes(role) ? role : t(`teamRole${role[0].toUpperCase()}${role.slice(1)}` as any)}</option>)}
           </select>
           <button style={ghost} disabled={!!busy} title={t("teamResetPassword" as any)}
             onClick={() => patchMember(member.id, { action: "reset_password" }, `pw-${member.id}`)}>

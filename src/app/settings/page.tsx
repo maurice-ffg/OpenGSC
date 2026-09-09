@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import {
-  ArrowLeft, Plus, X, CheckCircle, AlertCircle,
-  Users, Settings, Globe, Key, KeyRound, Edit2, Copy,
+  ArrowLeft, Plus, X, CheckCircle, AlertCircle, Shield,
+  Users, Settings, Globe, Key, KeyRound, Edit2, Copy, Trash2,
   ChevronDown, Crown, Zap, Star, Eye, Sparkles, BarChart3, ScrollText,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -13,8 +13,11 @@ import TeamMembersPanel from "@/components/TeamMembersPanel";
 import SeoToolsSettings, { SeoProviderKeysSection, AeoProviderKeysSection } from "@/components/SeoToolsSettings";
 import MetricsSettingsSection from "@/components/MetricsSettingsSection";
 import ProviderLogSection from "@/components/ProviderLogSection";
+import { BUILT_IN_ROLE_NAMES, readCustomRoles, writeCustomRoles } from "@/lib/team/customRoles";
+import { SEO_TOOLS } from "@/lib/seo/toolsNav";
+import { TOP_NAV_ACCESS } from "@/lib/seo/toolAccess";
 
-type NavItem = "accounts" | "bing" | "yandex" | "teams" | "api" | "api-keys" | "indexing-api" | "metrics" | "seo-tools" | "provider-log" | "notifications" | "members" | "preferences" | "supersites";
+type NavItem = "accounts" | "bing" | "yandex" | "teams" | "api" | "api-keys" | "indexing-api" | "metrics" | "seo-tools" | "provider-log" | "notifications" | "members" | "user-roles" | "preferences" | "supersites";
 
 // These screens predate a real organization/member authorization model. Keep them available to
 // contributors who are working on that RFC, but do not present client-only mock state as a
@@ -726,6 +729,196 @@ function MembersSection({ user }: { user: any }) {
         </div>
       </div>
     </SectionCard>
+  );
+}
+
+// ─── Section: User Roles ─────────────────────────────────────────────────────
+function UserRolesSection() {
+  const { t } = useLanguage();
+  const [roleName, setRoleName] = useState("");
+  const [customRoles, setCustomRoles] = useState<string[]>([]);
+  const [manageRole, setManageRole] = useState<string | null>(null);
+  const [siteOptions, setSiteOptions] = useState<{ id: string; url: string; siteId: string }[]>([]);
+  const [selectedSiteIds, setSelectedSiteIds] = useState<string[]>([]);
+  const [sitesLoading, setSitesLoading] = useState(false);
+  const [sitesSaving, setSitesSaving] = useState(false);
+  const [toolAccess, setToolAccess] = useState<Record<string, string[]>>({});
+  const [toolsSaving, setToolsSaving] = useState<string | null>(null);
+  const roles = [...BUILT_IN_ROLE_NAMES, ...customRoles];
+
+  useEffect(() => { setCustomRoles(readCustomRoles()); }, []);
+  useEffect(() => {
+    readCustomRoles().forEach(role => {
+      fetch(`/api/team/roles/${encodeURIComponent(role)}/tools`, { cache: "no-store" })
+        .then(response => response.json())
+        .then(data => setToolAccess(current => ({ ...current, [role]: data.toolHrefs || [] })))
+        .catch(() => {});
+    });
+  }, []);
+
+  const addRole = (event: React.FormEvent) => {
+    event.preventDefault();
+    const name = roleName.trim();
+    if (!name || roles.some(role => role.toLowerCase() === name.toLowerCase())) return;
+    setCustomRoles(current => {
+      const next = [...current, name];
+      writeCustomRoles(next);
+      return next;
+    });
+    setRoleName("");
+  };
+
+  const openSiteManager = async (role: string) => {
+    if (manageRole === role) {
+      setManageRole(null);
+      return;
+    }
+    setManageRole(role);
+    setSitesLoading(true);
+    try {
+      const response = await fetch(`/api/team/roles/${encodeURIComponent(role)}/sites`, { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error || "request_failed");
+      setSiteOptions(data.sites || []);
+      setSelectedSiteIds(data.selectedSiteIds || []);
+    } finally {
+      setSitesLoading(false);
+    }
+  };
+
+  const saveSiteAccess = async () => {
+    if (!manageRole) return;
+    setSitesSaving(true);
+    try {
+      await fetch(`/api/team/roles/${encodeURIComponent(manageRole)}/sites`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ siteIds: selectedSiteIds }),
+      });
+    } finally {
+      setSitesSaving(false);
+    }
+  };
+
+  const toggleTool = async (role: string, href: string, checked: boolean) => {
+    const next = checked
+      ? [...(toolAccess[role] || []), href]
+      : (toolAccess[role] || []).filter(current => current !== href);
+    setToolAccess(current => ({ ...current, [role]: next }));
+    setToolsSaving(role);
+    try {
+      await fetch(`/api/team/roles/${encodeURIComponent(role)}/tools`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toolHrefs: next }),
+      });
+    } finally {
+      setToolsSaving(current => current === role ? null : current);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <SectionCard>
+        <SectionTitle title="User roles" />
+        <form onSubmit={addRole} style={{ display: "flex", alignItems: "flex-end", gap: "8px" }}>
+          <label style={{ flex: 1, fontSize: "11px", fontWeight: 650, color: "var(--color-text-secondary)" }}>
+            Role name
+            <input
+              value={roleName}
+              onChange={event => setRoleName(event.target.value)}
+              placeholder="Enter a role name"
+              style={{ display: "block", width: "100%", marginTop: "5px", padding: "8px 10px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-bg)", color: "var(--color-text-primary)", fontSize: "13px", outline: "none" }}
+            />
+          </label>
+          <button type="submit" disabled={!roleName.trim()} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "8px 14px", borderRadius: "8px", border: "none", background: "var(--color-accent-blue)", color: "#fff", fontSize: "13px", fontWeight: 650, cursor: roleName.trim() ? "pointer" : "not-allowed", opacity: roleName.trim() ? 1 : 0.5 }}>
+            <Plus size={14} /> Add role
+          </button>
+        </form>
+      </SectionCard>
+
+      <SectionCard>
+        <SectionTitle title="SEO tools access" />
+        <p style={{ margin: "-8px 0 14px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
+          Choose which SEO tools custom roles can see. Built-in roles are not changed.
+        </p>
+        {customRoles.length === 0 ? (
+          <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>Add a custom role to configure SEO tools.</span>
+        ) : customRoles.map(role => (
+          <div key={role} style={{ padding: "12px 0", borderTop: "1px solid var(--color-border)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "13px", fontWeight: 650, color: "var(--color-text-primary)" }}>
+              <span>{role}</span>
+              {toolsSaving === role && <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>Saving...</span>}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "7px 16px" }}>
+              {SEO_TOOLS.map(tool => <label key={tool.href} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                <input type="checkbox" checked={(toolAccess[role] || []).includes(tool.href)} onChange={event => void toggleTool(role, tool.href, event.target.checked)} />
+                {t(tool.key as never)}
+              </label>)}
+              {TOP_NAV_ACCESS.map(tool => <label key={tool.href} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                <input type="checkbox" checked={(toolAccess[role] || []).includes(tool.href)} onChange={event => void toggleTool(role, tool.href, event.target.checked)} />
+                {t(tool.key as never)}
+              </label>)}
+            </div>
+          </div>
+        ))}
+      </SectionCard>
+
+      <SectionCard>
+        <SectionTitle title="Existing roles" />
+        <div style={{ display: "grid", gap: "8px" }}>
+          {roles.map(role => {
+            const custom = BUILT_IN_ROLE_NAMES.every(name => name !== role);
+            return <div key={role}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", padding: "11px 13px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "rgba(255,255,255,0.03)", color: "var(--color-text-primary)", fontSize: "13px" }}>
+                <span>{role}</span>
+                {custom ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <button
+                      type="button"
+                      onClick={() => void openSiteManager(role)}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 9px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "var(--color-text-secondary)", fontSize: "12px", cursor: "pointer" }}
+                    >
+                      Manage sites
+                    </button>
+                    <button
+                      type="button"
+                      title="Delete role"
+                      onClick={() => setCustomRoles(current => {
+                        const next = current.filter(existing => existing !== role);
+                        writeCustomRoles(next);
+                        return next;
+                      })}
+                      style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "6px 9px", borderRadius: "8px", border: "1px solid var(--color-border)", background: "var(--color-card)", color: "#ff6b62", fontSize: "12px", cursor: "pointer" }}
+                    >
+                      <Trash2 size={13} /> Delete
+                    </button>
+                  </div>
+                ) : <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>Built-in role</span>}
+              </div>
+              {manageRole === role && <div style={{ padding: "12px 13px", border: "1px solid var(--color-border)", borderTop: 0, background: "var(--color-bg)" }}>
+                {sitesLoading ? <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>Loading sites...</span> : <>
+                  {siteOptions.length === 0 && <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>No connected sites.</span>}
+                  <div style={{ display: "grid", gap: "6px" }}>
+                    {siteOptions.map(site => <label key={site.id} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "var(--color-text-primary)" }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedSiteIds.includes(site.id)}
+                        onChange={event => setSelectedSiteIds(current => event.target.checked ? [...current, site.id] : current.filter(id => id !== site.id))}
+                      />
+                      {site.url}
+                    </label>)}
+                  </div>
+                  <button type="button" onClick={() => void saveSiteAccess()} disabled={sitesSaving} style={{ marginTop: "10px", padding: "7px 12px", border: 0, borderRadius: "8px", background: "var(--color-accent-blue)", color: "#fff", fontSize: "12px", cursor: "pointer" }}>
+                    {sitesSaving ? "Saving..." : "Save sites"}
+                  </button>
+                </>}
+              </div>}
+            </div>;
+          })}
+        </div>
+      </SectionCard>
+    </div>
   );
 }
 
@@ -2210,6 +2403,7 @@ export default function SettingsPage() {
   const [removing, setRemoving] = useState<string | null>(null);
   const [teamName, setTeamName] = useState("");
   const [editingTeam, setEditingTeam] = useState(false);
+  const [canManageRoles, setCanManageRoles] = useState(false);
 
   const defaultTeamName = user?.name ? `${user.name.split(" ")[0]}'s Team` : "My Team";
 
@@ -2221,11 +2415,12 @@ export default function SettingsPage() {
     const valid: NavItem[] = [
       "accounts", "bing", "yandex", "api", "api-keys", "indexing-api", "metrics",
       "seo-tools", "provider-log", "notifications", "preferences",
+      ...(canManageRoles ? ["user-roles"] as NavItem[] : []),
       "members",
       ...(EXPERIMENTAL_TEAM_UI ? ["teams", "supersites"] as NavItem[] : []),
     ];
     if (tab && (valid as string[]).includes(tab)) setNav(tab as NavItem);
-  }, []);
+  }, [canManageRoles]);
 
   const fetchAccounts = async () => {
     setLoadingAccounts(true);
@@ -2233,6 +2428,12 @@ export default function SettingsPage() {
     setLoadingAccounts(false);
   };
   useEffect(() => { fetchAccounts(); }, []);
+  useEffect(() => {
+    fetch("/api/team", { cache: "no-store" })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => setCanManageRoles(data?.me?.role === "owner" || data?.me?.role === "admin"))
+      .catch(() => setCanManageRoles(false));
+  }, []);
 
   const handleAdd = () => signIn("google", { callbackUrl: "/settings" });
   const handleReauth = (email: string) =>
@@ -2318,6 +2519,7 @@ export default function SettingsPage() {
               </div>
             )}
             <NavBtn id="members" icon={<Users size={14} />} label={t("navTeamMembers")} />
+            {canManageRoles && <NavBtn id="user-roles" icon={<Shield size={14} />} label="User roles" />}
             <NavBtn id="preferences" icon={<Settings size={14} />} label={t("navPreferences")} />
             {EXPERIMENTAL_TEAM_UI && <NavBtn id="supersites" icon={<Star size={14} />} label={t("navSuperSites")} />}
           </div>
@@ -2369,6 +2571,7 @@ export default function SettingsPage() {
           {nav === "provider-log" && <SectionCard><ProviderLogSection /></SectionCard>}
           {nav === "notifications" && <NotificationsSection />}
           {nav === "members" && <TeamMembersPanel />}
+          {canManageRoles && nav === "user-roles" && <UserRolesSection />}
           {nav === "preferences"  && <PreferencesSection user={user} />}
           {EXPERIMENTAL_TEAM_UI && nav === "supersites" && <SuperSitesSection />}
         </div>

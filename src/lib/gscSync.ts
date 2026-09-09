@@ -202,7 +202,7 @@ export async function runGscSync() {
         liveSiteIdsByUser.set(userId, live);
       } catch (err: any) {
         console.error(`[GSC Sync]   Failed to list sites: ${err.message}`);
-        const needsReauth = /invalid_grant|token.*expired|unauthorized|invalid.*token/i.test(err.message);
+        const needsReauth = /invalid_grant|token.*expired|unauthorized|invalid.*token|insufficient.*authentication.*scope/i.test(err.message);
         result.accountErrors.push({
           accountId: account.providerAccountId,
           error: err.message,

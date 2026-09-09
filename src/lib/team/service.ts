@@ -3,8 +3,8 @@ import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import {
-  assignableRoles, canManageMember, isTeamRole, normalizeEmail, passwordProblem,
-  type TeamRole, type WorkspaceRole,
+  canManageMember, isAssignableRole, normalizeEmail, passwordProblem,
+  type WorkspaceRole,
 } from "./roles";
 import { workspaceOwner, type WorkspaceContext } from "./workspace";
 
@@ -42,7 +42,7 @@ export function memberDto(row: any, ownerId: string) {
     id: row.id,
     email: row.email,
     name: row.member?.name ?? null,
-    role: row.role as TeamRole,
+    role: row.role as WorkspaceRole,
     status: row.status,
     isOwner: false,
     invitePending: row.status === "invited",
@@ -81,7 +81,7 @@ export async function listWorkspace(ws: WorkspaceContext) {
 async function assertManageable(ws: WorkspaceContext, membershipId: string, nextRole?: WorkspaceRole) {
   const row = await memberships().findFirst({ where: { id: membershipId, ownerId: ws.ownerId } });
   if (!row) throw new TeamError("member_not_found", 404);
-  if (!canManageMember(ws.role, row.role as TeamRole, nextRole)) throw new TeamError("forbidden", 403);
+  if (!canManageMember(ws.role, row.role as WorkspaceRole, nextRole)) throw new TeamError("forbidden", 403);
   return row;
 }
 
@@ -106,8 +106,8 @@ export async function createMember(ws: WorkspaceContext, input: CreateMemberInpu
   const email = normalizeEmail(input.email);
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200) throw new TeamError("invalid_email");
 
-  const role = (isTeamRole(input.role) ? input.role : "viewer") as TeamRole;
-  if (!assignableRoles(ws.role).includes(role)) throw new TeamError("forbidden", 403);
+  const role = (isAssignableRole(input.role) ? String(input.role).trim() : "viewer") as WorkspaceRole;
+  if (role === "admin" && ws.role !== "owner") throw new TeamError("forbidden", 403);
 
   const owner = await workspaceOwner();
   if (owner?.email && normalizeEmail(owner.email) === email) throw new TeamError("email_is_owner");
@@ -160,7 +160,7 @@ export async function createMember(ws: WorkspaceContext, input: CreateMemberInpu
 }
 
 export async function updateMember(ws: WorkspaceContext, membershipId: string, patch: { role?: unknown; status?: unknown }) {
-  const nextRole = patch.role === undefined ? undefined : (isTeamRole(patch.role) ? patch.role : null);
+  const nextRole = patch.role === undefined ? undefined : (isAssignableRole(patch.role) ? String(patch.role).trim() : null);
   if (nextRole === null) throw new TeamError("invalid_role");
   const row = await assertManageable(ws, membershipId, nextRole ?? undefined);
 
